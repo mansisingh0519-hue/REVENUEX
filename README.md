@@ -14,6 +14,10 @@ It combines **customer payment history, deterministic recovery scoring, LLM-base
 
 ---
 
+Live :- https://revenuex-nine.vercel.app/
+
+---
+
 ## Why REVENUEX?
 
 Payment failure is not the end of a transaction.
@@ -1318,25 +1322,6 @@ Escalation
 
 ---
 
-# Buildathon Positioning
-
-REVENUEX was built for the **AI Revenue Recovery** track of the Razorpay AI Buildathon.
-
-The project focuses on the complete autonomous loop:
-
-```text
-DETECT
-  ↓
-UNDERSTAND
-  ↓
-DECIDE
-  ↓
-VALIDATE
-  ↓
-ACT
-  ↓
-MEASURE
-```
 
 The system is designed around three questions:
 
