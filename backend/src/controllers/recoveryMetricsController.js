@@ -3,123 +3,182 @@ const AuditLog = require("../models/AuditLog");
 
 const getRecoveryMetrics = async (req, res) => {
   try {
-    // =========================================================
-    // RECOVERY DASHBOARD
-    // Includes both live payments and controlled demo
-    // simulation transactions.
-    //
-    // Analytics dashboard remains LIVE ONLY.
-    // =========================================================
+    /*
+    =========================================================
+    RECOVERY DASHBOARD — LIVE PAYMENTS ONLY
+    =========================================================
 
-    const recoveryFilter = {};
+    The main Payment Monitor is a live operational view.
 
-    // =========================================================
-    // FAILED PAYMENTS
-    // =========================================================
+    Simulation transactions are intentionally excluded here
+    because Scenario Lab / Benchmark have their own metrics.
 
-    const failedPayments = await Transaction.countDocuments({
-      ...recoveryFilter,
-      status: "failed",
-    });
+    This keeps:
+      Transactions
+      Recovery Attempts
+      Recovered
+      Stopped
+      Escalated
+      At-Risk Revenue
+      Recovered Revenue
 
-    // =========================================================
-    // RECOVERY ATTEMPTS
-    // =========================================================
+    internally consistent with the live transaction list.
+    */
 
-    const recoveryAttempts = await Transaction.countDocuments({
-      ...recoveryFilter,
-      recoveryStatus: {
-        $in: ["ATTEMPTED", "RECOVERED", "FAILED"],
-      },
-    });
+    const recoveryFilter = {
+      simulation: false,
+    };
 
-    // =========================================================
-    // RECOVERED
-    // =========================================================
+    /*
+    =========================================================
+    FAILED PAYMENTS
+    =========================================================
+    */
 
-    const recoveredTransactions = await Transaction.countDocuments({
-      ...recoveryFilter,
-      recoveryStatus: "RECOVERED",
-    });
+    const failedPayments =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        status: "failed",
+      });
 
-    // =========================================================
-    // STOPPED
-    // =========================================================
+    /*
+    =========================================================
+    RECOVERY ATTEMPTS
+    =========================================================
 
-    const stoppedTransactions = await Transaction.countDocuments({
-      ...recoveryFilter,
-      recoveryStatus: "STOPPED",
-    });
+    An attempt means the recovery engine has actually entered
+    an execution state.
 
-    // =========================================================
-    // ESCALATED
-    // =========================================================
+    ATTEMPTED
+    RECOVERED
+    FAILED
 
-    const escalatedTransactions = await Transaction.countDocuments({
-      ...recoveryFilter,
-      recoveryStatus: "ESCALATED",
-    });
+    are counted as attempts.
 
-    // =========================================================
-    // FAILED RECOVERY
-    // =========================================================
+    STOPPED and ESCALATED are intentionally kept separate.
+    */
 
-    const failedRecoveryAttempts = await Transaction.countDocuments({
-      ...recoveryFilter,
-      recoveryStatus: "FAILED",
-    });
-
-    // =========================================================
-    // RECOVERED REVENUE
-    // =========================================================
-
-    const recoveredRevenueResult = await Transaction.aggregate([
-      {
-        $match: {
-          ...recoveryFilter,
-          recoveryStatus: "RECOVERED",
+    const recoveryAttempts =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        recoveryStatus: {
+          $in: [
+            "ATTEMPTED",
+            "RECOVERED",
+            "FAILED",
+          ],
         },
-      },
-      {
-        $group: {
-          _id: null,
-          totalRecovered: {
-            $sum: "$recoveredAmount",
+      });
+
+    /*
+    =========================================================
+    RECOVERED
+    =========================================================
+    */
+
+    const recoveredTransactions =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        recoveryStatus: "RECOVERED",
+      });
+
+    /*
+    =========================================================
+    STOPPED
+    =========================================================
+    */
+
+    const stoppedTransactions =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        recoveryStatus: "STOPPED",
+      });
+
+    /*
+    =========================================================
+    ESCALATED
+    =========================================================
+    */
+
+    const escalatedTransactions =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        recoveryStatus: "ESCALATED",
+      });
+
+    /*
+    =========================================================
+    FAILED RECOVERY
+    =========================================================
+    */
+
+    const failedRecoveryAttempts =
+      await Transaction.countDocuments({
+        ...recoveryFilter,
+        recoveryStatus: "FAILED",
+      });
+
+    /*
+    =========================================================
+    RECOVERED REVENUE
+    =========================================================
+    */
+
+    const recoveredRevenueResult =
+      await Transaction.aggregate([
+        {
+          $match: {
+            ...recoveryFilter,
+            recoveryStatus: "RECOVERED",
           },
         },
-      },
-    ]);
-
-    // =========================================================
-    // AT-RISK REVENUE
-    //
-    // Only currently failed payments are considered at risk.
-    // Recovered payments are no longer at risk.
-    // =========================================================
-
-    const atRiskRevenueResult = await Transaction.aggregate([
-      {
-        $match: {
-          ...recoveryFilter,
-          status: "failed",
-          recoveryStatus: {
-            $nin: ["RECOVERED"],
+        {
+          $group: {
+            _id: null,
+            totalRecovered: {
+              $sum: "$recoveredAmount",
+            },
           },
         },
-      },
-      {
-        $group: {
-          _id: null,
-          totalAtRisk: {
-            $sum: "$amount",
+      ]);
+
+    /*
+    =========================================================
+    AT-RISK REVENUE
+    =========================================================
+
+    Only failed live payments that have NOT been recovered
+    remain at risk.
+
+    A recovered payment is no longer counted as at risk.
+    */
+
+    const atRiskRevenueResult =
+      await Transaction.aggregate([
+        {
+          $match: {
+            ...recoveryFilter,
+            status: "failed",
+            recoveryStatus: {
+              $nin: ["RECOVERED"],
+            },
           },
         },
-      },
-    ]);
+        {
+          $group: {
+            _id: null,
+            totalAtRisk: {
+              $sum: "$amount",
+            },
+          },
+        },
+      ]);
 
-    // =========================================================
-    // TOTALS
-    // =========================================================
+    /*
+    =========================================================
+    TOTALS
+    =========================================================
+    */
 
     const totalRecovered =
       recoveredRevenueResult.length > 0
@@ -131,37 +190,61 @@ const getRecoveryMetrics = async (req, res) => {
         ? atRiskRevenueResult[0].totalAtRisk
         : 0;
 
+    /*
+    =========================================================
+    RECOVERY RATE
+    =========================================================
+
+    Recovery Rate =
+      Recovered Revenue /
+      (Recovered Revenue + Remaining At-Risk Revenue)
+    */
+
     const recoveryRate =
       totalAtRisk + totalRecovered > 0
         ? Number(
             (
               (totalRecovered /
-                (totalAtRisk + totalRecovered)) *
+                (totalAtRisk +
+                  totalRecovered)) *
               100
             ).toFixed(2)
           )
         : 0;
 
-    // =========================================================
-    // AUDIT LOGS
-    // =========================================================
+    /*
+    =========================================================
+    LIVE AUDIT LOGS
+    =========================================================
 
-    const transactionIds = await Transaction.distinct("_id");
+    Only audit records belonging to live transactions are
+    included in the Payment Monitor.
+    */
 
-    const totalAuditLogs = await AuditLog.countDocuments({
-      transactionId: {
-        $in: transactionIds,
-      },
-    });
+    const liveTransactionIds =
+      await Transaction.distinct("_id", {
+        simulation: false,
+      });
 
-    // =========================================================
-    // RESPONSE
-    // =========================================================
+    const totalAuditLogs =
+      await AuditLog.countDocuments({
+        transactionId: {
+          $in: liveTransactionIds,
+        },
+      });
+
+    /*
+    =========================================================
+    RESPONSE
+    =========================================================
+    */
 
     return res.status(200).json({
       success: true,
 
       source: "recovery_dashboard",
+
+      scope: "live",
 
       metrics: {
         failedPayments,
@@ -186,7 +269,8 @@ const getRecoveryMetrics = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Unable to calculate recovery metrics",
+      message:
+        "Unable to calculate recovery metrics",
     });
   }
 };
