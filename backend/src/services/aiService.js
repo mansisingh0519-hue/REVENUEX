@@ -189,34 +189,13 @@ Use when another attempt appears unsafe, unlikely to succeed, or clearly outside
 
 Choose exactly ONE action.
 
-IMPORTANT:
-Return ONLY ONE JSON OBJECT.
-Do not use markdown.
-Do not use code fences.
-Do not write an explanation before or after the JSON.
-
-The JSON object MUST contain exactly these fields:
-
-{
-  "diagnosis": "short sentence",
-  "recommendedAction": "RETRY",
-  "confidence": 0.85,
-  "reason": "short sentence"
-}
+Return only the required JSON object.
+Keep diagnosis and reason short.
 `;
 };
 
 // =========================================================
 // EXTRACT JSON FROM MODEL RESPONSE
-// =========================================================
-//
-// Some reasoning models may return JSON surrounded by
-// additional text. We safely extract the first complete
-// JSON object instead of blindly calling JSON.parse(raw).
-//
-// This does NOT change the financial safety rules.
-// The result still passes through normalizeDecision()
-// and hardSafetyOverride().
 // =========================================================
 
 const extractJsonObject = (raw) => {
@@ -231,14 +210,12 @@ const extractJsonObject = (raw) => {
 
   const text = raw.trim();
 
-  // First try the complete response directly.
   try {
     return JSON.parse(text);
   } catch (error) {
-    // Continue to safe extraction below.
+    // Continue to safe extraction.
   }
 
-  // Find the first JSON object.
   const start = text.indexOf("{");
 
   if (start === -1) {
@@ -386,40 +363,23 @@ You are a conservative payment recovery analyst.
 
 You are an ADVISORY AI only.
 
-You MUST return one JSON object containing:
+Return exactly one JSON object.
 
-{
-  "diagnosis": "string",
-  "recommendedAction": "RETRY | REVIEW | STOP",
-  "confidence": 0.0,
-  "reason": "string"
-}
+The JSON must contain:
+- diagnosis: short string
+- recommendedAction: RETRY, REVIEW, or STOP
+- confidence: number between 0 and 1
+- reason: short string
 
-Strict rules:
-
-1. recommendedAction MUST be exactly RETRY, REVIEW, or STOP.
-
-2. confidence MUST be a number between 0 and 1.
-
+Rules:
+1. recommendedAction must be RETRY, REVIEW, or STOP.
+2. confidence must be between 0 and 1.
 3. Never invent customer history.
-
 4. Prefer REVIEW when evidence is uncertain.
-
 5. Prefer STOP when recovery appears unsafe.
-
-6. Never claim that a payment was successfully recovered.
-
-7. Never claim to have executed a payment.
-
-8. The deterministic policy engine has final authority.
-
-9. Output ONLY the JSON object.
-
-10. Do not output markdown.
-
-11. Do not output code fences.
-
-12. Do not output any text before or after the JSON object.
+6. Never claim payment recovery.
+7. Never claim payment execution.
+8. Deterministic policy has final authority.
 `,
           },
           {
@@ -430,7 +390,52 @@ Strict rules:
 
         temperature: 0.1,
 
-        max_tokens: 300,
+        // GPT-OSS is a reasoning model.
+        // Low reasoning keeps this simple task concise.
+        reasoning_effort: "low",
+
+        // Give the model enough room to finish the JSON.
+        max_completion_tokens: 600,
+
+        // Strict structured output.
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "revenuex_recovery_decision",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                diagnosis: {
+                  type: "string",
+                },
+                recommendedAction: {
+                  type: "string",
+                  enum: [
+                    "RETRY",
+                    "REVIEW",
+                    "STOP",
+                  ],
+                },
+                confidence: {
+                  type: "number",
+                  minimum: 0,
+                  maximum: 1,
+                },
+                reason: {
+                  type: "string",
+                },
+              },
+              required: [
+                "diagnosis",
+                "recommendedAction",
+                "confidence",
+                "reason",
+              ],
+              additionalProperties: false,
+            },
+          },
+        },
       },
       {
         timeout: AI_TIMEOUT_MS,
