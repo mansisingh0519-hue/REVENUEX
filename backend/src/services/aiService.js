@@ -51,13 +51,6 @@ if (process.env.GROQ_API_KEY) {
 // =========================================================
 // HARD SAFETY OVERRIDE
 // =========================================================
-//
-// This is NOT the final policy engine.
-// It is an additional conservative guard around AI output.
-//
-// It can only make an AI recommendation MORE conservative.
-// It can never turn STOP/REVIEW into RETRY.
-//
 
 const hardSafetyOverride = ({
   payment,
@@ -116,13 +109,6 @@ const hardSafetyOverride = ({
 // =========================================================
 // DETERMINISTIC FALLBACK
 // =========================================================
-//
-// If Groq is unavailable, REVENUEX still works.
-//
-// The fallback never executes anything.
-// It only produces an advisory decision that goes
-// through the deterministic policy engine.
-//
 
 const localFallbackDecision = ({
   recovery,
@@ -190,9 +176,7 @@ RECOVERY ANALYSIS
 Recovery score: ${recovery.score ?? "unknown"}
 Risk level: ${recovery.riskLevel || "unknown"}
 
-Use the evidence above to independently determine the safest action.
-
-AVAILABLE ACTIONS
+AVAILABLE ACTIONS:
 
 RETRY
 Use when the payment appears reasonably recoverable and another attempt is appropriate.
@@ -203,23 +187,121 @@ Use when the situation is uncertain and human review is safer.
 STOP
 Use when another attempt appears unsafe, unlikely to succeed, or clearly outside safe recovery conditions.
 
-Choose EXACTLY ONE action:
+Choose exactly ONE action.
 
-RETRY
-REVIEW
-STOP
+IMPORTANT:
+Return ONLY ONE JSON OBJECT.
+Do not use markdown.
+Do not use code fences.
+Do not write an explanation before or after the JSON.
 
-Return ONLY valid JSON.
-
-Required format:
+The JSON object MUST contain exactly these fields:
 
 {
-  "diagnosis": "one short sentence explaining the likely failure situation",
+  "diagnosis": "short sentence",
   "recommendedAction": "RETRY",
   "confidence": 0.85,
-  "reason": "one short sentence explaining why this action is appropriate"
+  "reason": "short sentence"
 }
 `;
+};
+
+// =========================================================
+// EXTRACT JSON FROM MODEL RESPONSE
+// =========================================================
+//
+// Some reasoning models may return JSON surrounded by
+// additional text. We safely extract the first complete
+// JSON object instead of blindly calling JSON.parse(raw).
+//
+// This does NOT change the financial safety rules.
+// The result still passes through normalizeDecision()
+// and hardSafetyOverride().
+// =========================================================
+
+const extractJsonObject = (raw) => {
+  if (
+    typeof raw !== "string" ||
+    !raw.trim()
+  ) {
+    throw new Error(
+      "AI returned an empty response."
+    );
+  }
+
+  const text = raw.trim();
+
+  // First try the complete response directly.
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    // Continue to safe extraction below.
+  }
+
+  // Find the first JSON object.
+  const start = text.indexOf("{");
+
+  if (start === -1) {
+    throw new Error(
+      "AI returned invalid JSON."
+    );
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (
+    let i = start;
+    i < text.length;
+    i++
+  ) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === "{") {
+      depth++;
+    }
+
+    if (char === "}") {
+      depth--;
+
+      if (depth === 0) {
+        const candidate =
+          text.slice(start, i + 1);
+
+        try {
+          return JSON.parse(candidate);
+        } catch (error) {
+          throw new Error(
+            "AI returned malformed JSON."
+          );
+        }
+      }
+    }
+  }
+
+  throw new Error(
+    "AI returned incomplete JSON."
+  );
 };
 
 // =========================================================
@@ -227,7 +309,10 @@ Required format:
 // =========================================================
 
 const normalizeDecision = (parsed) => {
-  if (!parsed || typeof parsed !== "object") {
+  if (
+    !parsed ||
+    typeof parsed !== "object"
+  ) {
     throw new Error(
       "AI returned an invalid response."
     );
@@ -259,13 +344,15 @@ const normalizeDecision = (parsed) => {
   );
 
   const diagnosis =
-    typeof parsed.diagnosis === "string" &&
+    typeof parsed.diagnosis ===
+      "string" &&
     parsed.diagnosis.trim()
       ? parsed.diagnosis.trim()
       : "No diagnosis returned.";
 
   const reason =
-    typeof parsed.reason === "string" &&
+    typeof parsed.reason ===
+      "string" &&
     parsed.reason.trim()
       ? parsed.reason.trim()
       : "No recommendation reason returned.";
@@ -297,18 +384,9 @@ const callAI = async (context) => {
             content: `
 You are a conservative payment recovery analyst.
 
-Analyze failed payment context and recommend
-the safest next action.
+You are an ADVISORY AI only.
 
-You are NOT an execution agent.
-
-You MUST return exactly one JSON object.
-
-No markdown.
-No code fences.
-No additional text.
-
-Required fields:
+You MUST return one JSON object containing:
 
 {
   "diagnosis": "string",
@@ -317,12 +395,11 @@ Required fields:
   "reason": "string"
 }
 
-Rules:
+Strict rules:
 
-1. recommendedAction MUST be exactly:
-   RETRY, REVIEW, or STOP.
+1. recommendedAction MUST be exactly RETRY, REVIEW, or STOP.
 
-2. confidence MUST be between 0 and 1.
+2. confidence MUST be a number between 0 and 1.
 
 3. Never invent customer history.
 
@@ -335,6 +412,14 @@ Rules:
 7. Never claim to have executed a payment.
 
 8. The deterministic policy engine has final authority.
+
+9. Output ONLY the JSON object.
+
+10. Do not output markdown.
+
+11. Do not output code fences.
+
+12. Do not output any text before or after the JSON object.
 `,
           },
           {
@@ -356,21 +441,8 @@ Rules:
     response?.choices?.[0]?.message?.content ||
     "";
 
-  if (!raw.trim()) {
-    throw new Error(
-      "AI returned an empty response."
-    );
-  }
-
-  let parsed;
-
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      "AI returned invalid JSON."
-    );
-  }
+  const parsed =
+    extractJsonObject(raw);
 
   const normalized =
     normalizeDecision(parsed);
