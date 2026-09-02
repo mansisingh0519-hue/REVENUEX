@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
 
@@ -55,6 +54,7 @@ function MetricCard({
     <div className={`metric-card ${variant}`}>
       <div className="metric-top">
         <span>{label}</span>
+
         {icon && (
           <span className="metric-icon">
             {icon}
@@ -96,7 +96,8 @@ function App() {
   ======================================================= */
 
   const [analytics, setAnalytics] = useState(null);
-  const [recoveryMetrics, setRecoveryMetrics] = useState(null);
+  const [recoveryMetrics, setRecoveryMetrics] =
+    useState(null);
   const [transactions, setTransactions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [experiment, setExperiment] = useState(null);
@@ -724,9 +725,12 @@ function App() {
     try {
       setExecutionLoading(true);
 
+      const transactionId =
+        selectedTransaction._id;
+
       const response =
         await fetch(
-          `${API}/api/recovery-actions/${selectedTransaction._id}/execute`,
+          `${API}/api/recovery-actions/${transactionId}/execute`,
           {
             method: "POST",
           }
@@ -744,12 +748,52 @@ function App() {
         return;
       }
 
+      /*
+       * =====================================================
+       * IMPORTANT STATE SYNCHRONIZATION
+       * =====================================================
+       *
+       * The execution endpoint returns the authoritative
+       * transaction after the recovery action.
+       *
+       * Previously, the UI stored executionResult but kept
+       * selectedTransaction unchanged. That caused the
+       * Decision Center to show:
+       *
+       *   RECOVERED ₹500
+       *
+       * while the transaction itself still displayed:
+       *
+       *   Retry Count 0
+       *   NOT ATTEMPTED
+       *
+       * Replace the selected transaction with the fresh
+       * backend transaction returned by the execution call.
+       */
+
+      if (data.transaction) {
+        setSelectedTransaction(
+          data.transaction
+        );
+      }
+
       setExecutionResult(data);
+
+      /*
+       * Refresh the dashboard so the global metrics,
+       * Payment Monitor and recovery counts reflect the
+       * completed recovery.
+       */
 
       await loadDashboard();
 
+      /*
+       * Refresh the audit trail using the transaction ID
+       * captured BEFORE state updates.
+       */
+
       await loadRecoveryTimeline(
-        selectedTransaction._id
+        transactionId
       );
 
       showNotice(
@@ -1827,6 +1871,7 @@ function App() {
                               data.recoveredAmount
                             )}
                           </strong>
+
                         </div>
 
                       </div>
@@ -2762,4 +2807,3 @@ function App() {
 }
 
 export default App;
-
