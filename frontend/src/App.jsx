@@ -1529,7 +1529,7 @@ function App() {
             <SectionHeader
               eyebrow="VALIDATION"
               title="Recovery Benchmark"
-              description="A controlled 100-case evaluation of AI decisions, policy enforcement and simulated recovery outcomes."
+              description="A controlled 100-case evaluation of AI decisions, policy enforcement and simulated recovery outcomes. Results are synthetic and do not represent real customer revenue."
             />
 
             <button
@@ -1576,64 +1576,68 @@ function App() {
 
               </div>
 
-              {/* BENCHMARK PIPELINE */}
+              {/* BENCHMARK SUMMARY */}
 
-              <div className="benchmark-pipeline">
+<div className="benchmark-pipeline">
 
-                <div>
-                  <span>100</span>
-                  <small>
-                    Payments tested
-                  </small>
-                </div>
+  <div>
+    <span>100</span>
+    <small>
+      Payments tested
+    </small>
+  </div>
 
-                <div className="pipeline-arrow">
-                  →
-                </div>
+  <div>
+    <span>
+      {percent(
+        experiment.decisionAgreement
+      )}
+    </span>
 
-                <div>
-                  <span>
-                    {experiment.correctDecisions || 0}
-                  </span>
+    <small>
+      Decision agreement
+    </small>
+  </div>
 
-                  <small>
-                    Correct decisions
-                  </small>
-                </div>
+  <div>
+    <span>
+      {experiment.blockedActions || 0}
+    </span>
 
-                <div className="pipeline-arrow">
-                  →
-                </div>
+    <small>
+      Policy blocks
+    </small>
+  </div>
 
-                <div>
-                  <span>
-                    {experiment.blockedActions || 0}
-                  </span>
+  <div className="pipeline-result">
 
-                  <small>
-                    Policy blocks
-                  </small>
-                </div>
+    <span>
+      {money(
+        experiment.totalRecovered
+      )}
+    </span>
 
-                <div className="pipeline-arrow">
-                  →
-                </div>
+    <small>
+      Eligible revenue recovered
+    </small>
 
-                <div className="pipeline-result">
+  </div>
 
-                  <span>
-                    {money(
-                      experiment.totalRecovered
-                    )}
-                  </span>
+</div>
 
-                  <small>
-                    Recovered
-                  </small>
+<div className="benchmark-highlight">
 
-                </div>
+  <span>SAFETY RESULT</span>
 
-              </div>
+  <strong>
+    {experiment.policyViolations || 0}
+  </strong>
+
+  <small>
+    Policy violations
+  </small>
+
+</div>
 
               {/* PRIMARY BENCHMARK NUMBERS */}
 
@@ -1930,7 +1934,7 @@ function App() {
           <SectionHeader
             eyebrow="LIVE TRANSACTION DATA"
             title="Payment Monitor"
-            description="Real Razorpay test transactions. Synthetic benchmark records are excluded."
+            description="Live Razorpay Test Mode transactions. Synthetic benchmark records are excluded from these metrics."
           />
 
           <div className="monitor-toolbar">
