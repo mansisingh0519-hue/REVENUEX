@@ -174,13 +174,6 @@ const buildRecoveryAnalysis =
 // ========================================
 // RECORD ANALYSIS EVENTS
 // ========================================
-//
-// These events are intentionally created during
-// ANALYZE, not only during EXECUTE.
-//
-// This gives REVENUEX a persistent decision trail
-// even when policy blocks the recovery.
-//
 
 const recordAnalysisEvents = async ({
   transaction,
@@ -630,10 +623,24 @@ const executeRecovery =
         });
 
       // ----------------------------------------
-      // SAVE TRANSACTION
+      // USE THE FRESH TRANSACTION RETURNED
+      // BY THE RECOVERY ENGINE
       // ----------------------------------------
 
-      await transaction.save();
+      const updatedTransaction =
+        execution.transaction
+          ? await Transaction.findById(
+              execution.transaction._id
+            )
+          : await Transaction.findById(
+              transaction._id
+            );
+
+      if (!updatedTransaction) {
+        throw new Error(
+          "Updated transaction could not be loaded after recovery execution."
+        );
+      }
 
       // ----------------------------------------
       // EXECUTION EVENT
@@ -641,7 +648,7 @@ const executeRecovery =
 
       await RecoveryEvent.create({
         transactionId:
-          transaction._id,
+          updatedTransaction._id,
 
         eventType:
           "RECOVERY_COMPLETED",
@@ -664,14 +671,14 @@ const executeRecovery =
             0,
 
           recoveryStatus:
-            transaction.recoveryStatus,
+            updatedTransaction.recoveryStatus,
 
           retryCount:
-            transaction.retryCount ||
+            updatedTransaction.retryCount ||
             0,
 
           simulated:
-            transaction.simulation ===
+            updatedTransaction.simulation ===
             true,
 
           action:
@@ -688,7 +695,7 @@ const executeRecovery =
 
       await RecoveryEvent.create({
         transactionId:
-          transaction._id,
+          updatedTransaction._id,
 
         eventType:
           "RECOVERY_COMPLETED",
@@ -708,14 +715,14 @@ const executeRecovery =
             0,
 
           recoveryStatus:
-            transaction.recoveryStatus,
+            updatedTransaction.recoveryStatus,
 
           retryCount:
-            transaction.retryCount ||
+            updatedTransaction.retryCount ||
             0,
 
           simulated:
-            transaction.simulation ===
+            updatedTransaction.simulation ===
             true,
 
           action:
@@ -732,22 +739,29 @@ const executeRecovery =
 
         transaction: {
           id:
-            transaction._id,
+            updatedTransaction._id,
 
           amount:
-            transaction.amount,
+            updatedTransaction.amount,
 
           retryCount:
-            transaction.retryCount ||
+            updatedTransaction.retryCount ||
             0,
 
           recoveryStatus:
-            transaction.recoveryStatus ||
+            updatedTransaction.recoveryStatus ||
             "NOT_ATTEMPTED",
 
           recoveredAmount:
-            transaction.recoveredAmount ||
+            updatedTransaction.recoveredAmount ||
             0,
+
+          status:
+            updatedTransaction.status,
+
+          simulation:
+            updatedTransaction.simulation ===
+            true,
         },
 
         recovery,
@@ -756,7 +770,20 @@ const executeRecovery =
 
         policy,
 
-        execution,
+        execution: {
+          ...execution,
+
+          retryCount:
+            updatedTransaction.retryCount ||
+            0,
+
+          recoveryStatus:
+            updatedTransaction.recoveryStatus,
+
+          recoveredAmount:
+            updatedTransaction.recoveredAmount ||
+            0,
+        },
       });
     } catch (error) {
       console.error(

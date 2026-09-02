@@ -100,6 +100,11 @@ const executeRecoveryAction = async ({
 
       recoveryStatus:
         transaction.recoveryStatus,
+
+      retryCount:
+        transaction.retryCount || 0,
+
+      transaction,
     };
   }
 
@@ -123,6 +128,11 @@ const executeRecoveryAction = async ({
       recoveryStatus:
         transaction.recoveryStatus ||
         "STOPPED",
+
+      retryCount:
+        transaction.retryCount || 0,
+
+      transaction,
     };
   }
 
@@ -171,6 +181,12 @@ const executeRecoveryAction = async ({
 
         action:
           action || "UNKNOWN",
+
+        recoveryStatus:
+          transaction.recoveryStatus,
+
+        retryCount:
+          transaction.retryCount || 0,
       },
     });
 
@@ -188,14 +204,17 @@ const executeRecoveryAction = async ({
 
       recoveryStatus:
         transaction.recoveryStatus,
+
+      retryCount:
+        transaction.retryCount || 0,
+
+      transaction,
     };
   }
 
   // ========================================
   // ATOMIC EXECUTION CLAIM
   // ========================================
-  //
-  // This is the important idempotency guard.
   //
   // We only claim the transaction when:
   //
@@ -266,11 +285,16 @@ const executeRecoveryAction = async ({
           "Recovery has already been completed for this transaction.",
 
         recoveredAmount:
-          latestTransaction.recoveredAmount ||
-          0,
+          latestTransaction.recoveredAmount || 0,
 
         recoveryStatus:
           latestTransaction.recoveryStatus,
+
+        retryCount:
+          latestTransaction.retryCount || 0,
+
+        transaction:
+          latestTransaction,
       };
     }
 
@@ -288,11 +312,16 @@ const executeRecoveryAction = async ({
           "Recovery is already being processed for this transaction.",
 
         recoveredAmount:
-          latestTransaction.recoveredAmount ||
-          0,
+          latestTransaction.recoveredAmount || 0,
 
         recoveryStatus:
           latestTransaction.recoveryStatus,
+
+        retryCount:
+          latestTransaction.retryCount || 0,
+
+        transaction:
+          latestTransaction,
       };
     }
 
@@ -310,6 +339,12 @@ const executeRecoveryAction = async ({
       recoveryStatus:
         latestTransaction?.recoveryStatus ||
         "STOPPED",
+
+      retryCount:
+        latestTransaction?.retryCount || 0,
+
+      transaction:
+        latestTransaction || transaction,
     };
   }
 
@@ -353,7 +388,7 @@ const executeRecoveryAction = async ({
 
       details: {
         retryCount:
-          currentRetryCount,
+          claimedTransaction.retryCount,
 
         amount:
           claimedTransaction.amount,
@@ -361,6 +396,15 @@ const executeRecoveryAction = async ({
         simulated: true,
       },
     });
+
+    // ----------------------------------------
+    // RETURN THE FRESH PERSISTED TRANSACTION
+    // ----------------------------------------
+
+    const updatedTransaction =
+      await Transaction.findById(
+        claimedTransaction._id
+      );
 
     return {
       success: true,
@@ -372,13 +416,16 @@ const executeRecoveryAction = async ({
         "Simulated retry succeeded.",
 
       recoveredAmount:
-        claimedTransaction.amount,
+        updatedTransaction.recoveredAmount,
 
       recoveryStatus:
-        claimedTransaction.recoveryStatus,
+        updatedTransaction.recoveryStatus,
 
       retryCount:
-        currentRetryCount,
+        updatedTransaction.retryCount,
+
+      transaction:
+        updatedTransaction,
     };
   }
 
@@ -426,7 +473,7 @@ const executeRecoveryAction = async ({
 
     details: {
       retryCount:
-        currentRetryCount,
+        claimedTransaction.retryCount,
 
       amount:
         claimedTransaction.amount,
@@ -434,6 +481,11 @@ const executeRecoveryAction = async ({
       simulated: false,
     },
   });
+
+  const updatedTransaction =
+    await Transaction.findById(
+      claimedTransaction._id
+    );
 
   return {
     success: false,
@@ -444,13 +496,17 @@ const executeRecoveryAction = async ({
     message:
       "Live payment retry is disabled in the current demo environment.",
 
-    recoveredAmount: 0,
+    recoveredAmount:
+      updatedTransaction.recoveredAmount || 0,
 
     recoveryStatus:
-      claimedTransaction.recoveryStatus,
+      updatedTransaction.recoveryStatus,
 
     retryCount:
-      currentRetryCount,
+      updatedTransaction.retryCount,
+
+    transaction:
+      updatedTransaction,
   };
 };
 
